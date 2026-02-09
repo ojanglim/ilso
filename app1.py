@@ -12,7 +12,8 @@ load_dotenv()
 KMA_API_KEY = os.getenv("KMA_API_KEY")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 KAMIS_KEY = os.getenv("KAMIS_CERT_KEY")
-KAMIS_ID = os.getenv("KAMIS_ID")
+# .env 파일에 KAMIS_ID 또는 KAMIS_CERT_ID 중 저장된 이름에 맞춰 확인하세요.
+KAMIS_ID = os.getenv("KAMIS_ID") or os.getenv("KAMIS_CERT_ID")
 
 client = OpenAI(api_key=OPENAI_KEY)
 
@@ -36,18 +37,41 @@ def get_kma_weather(city_name):
         except: continue
     return 15.0
 
-def get_market_price(item_name):
+def get_market_price(item_name, category_name):
+    """
+    KAMIS API에서 실시간 소매가를 가져오는 함수 (수정본)
+    """
+    # 부류 코드 매핑 (이 코드가 누락되면 데이터를 가져오지 못함)
+    category_map = {
+        "식량작물": "100", "채소류": "200", "과일류": "400", 
+        "특용작물": "400", "축산물": "500", "수산물": "600"
+    }
+    item_code = category_map.get(category_name, "200")
+    
     url = "https://www.kamis.or.kr/service/price/xml.do?action=dailySalesList"
-    params = {"p_cert_key": KAMIS_KEY, "p_cert_id": KAMIS_ID, "p_returntype": "json"}
+    params = {
+        "p_cert_key": KAMIS_KEY, 
+        "p_cert_id": KAMIS_ID, 
+        "p_returntype": "json",
+        "p_item_category_code": item_code
+    }
+    
     try:
         res = requests.get(url, params=params).json()
         items = res.get('price', [])
+        
+        # 품목 리스트가 비어있지 않은지 확인
+        if not items or not isinstance(items, list):
+            return 5500
+            
         for item in items:
+            # 입력한 품목명이 결과에 포함되어 있는지 확인
             if item_name in item.get('item_name', ''):
                 price = item.get('dpr1', '').replace(',', '')
                 return int(price) if price.isdigit() else 5500
         return 5500
-    except: return 5500
+    except: 
+        return 5500
 
 # --- [웹 UI 설정] ---
 st.set_page_config(page_title="장날 AI 전문가 리포트", layout="wide")
@@ -84,7 +108,8 @@ st.title(f"🍎 [장날] 지능형 전 품목 가격 결정 에이전트")
 if analyze_btn:
     with st.spinner(f"데이터 정밀 분석 중..."):
         temp = get_kma_weather(city)
-        market_p = get_market_price(crop)
+        # 중요: 함수 호출 시 category 인자를 함께 전달합니다.
+        market_p = get_market_price(crop, category)
         days_passed = (datetime.now().date() - record_date).days
         
         # GPT 분석 요청
@@ -108,7 +133,10 @@ if analyze_btn:
         s_val = {"소": 0.95, "중": 1.0, "대": 1.05, "특대": 1.1}.get(size, 1.0)
         a_val = {"정품(최상)": 1.1, "정품(보통)": 1.0, "못난이(흠과)": 0.9}.get(appearance, 1.0)
         f_val = 1.02 if days_passed <= 1 else (0.95 if days_passed > 5 else 1.0)
-        q_val = {"하": 0.9, "부족": 0.95, "보통": 1.0, "우수": 1.05, "최상": 1.1, "활어급": 1.15, "1++": 1.2}.get(q_metric, 1.0)
+        
+        # 품질 지수(q_val) 매핑 보강
+        q_val_map = {"하": 0.9, "부족": 0.95, "보통": 1.0, "우수": 1.05, "최상": 1.1, "최상(특급)": 1.1, "활어급": 1.15, "1++": 1.2}
+        q_val = q_val_map.get(q_metric, 1.0)
         if category == "과일류": q_val = 1.0 + (q_metric - 13.0) * 0.015
         
         j_idx = round(min(w_val * h_val * float(data.get("d_idx", 1.0)) * float(data.get("l_idx", 1.0)) * q_val * s_val * a_val * f_val, 1.4), 2)
@@ -130,12 +158,9 @@ if analyze_btn:
 
         # --- [지수 분석 그래프 및 정밀 눈금] ---
         st.markdown(f"### 📊 장날 통합 지수 분석 : {j_idx}")
-        
-        # 0.5~1.5 범위를 기준으로 프로그레스 바 렌더링
         norm_idx = min(max((j_idx - 0.5) / 1.0, 0.0), 1.0)
         st.progress(norm_idx)
         
-        # 각 숫자와 문구를 동일한 너비(25%)의 칸에 담아 간격을 완벽히 일치시킴
         st.markdown("""
         <div style="display: flex; width: 100%; margin-top: -5px;">
             <div style="width: 20%;"></div> <div style="width: 20%; text-align: center; font-weight: bold;">0.8</div>
@@ -158,35 +183,21 @@ if analyze_btn:
         # --- [8대 요인 상세 분석 리포트] ---
         st.markdown(f"### 🔍 8대 유통 및 품질 상세 분석 리포트")
         with st.expander("🌐 외부 유통 환경 분석", expanded=True):
-            # (1) 기상 요인
             weather_desc = "작물의 호흡량이 급증해 선도 유지가 어려운 고온 상태입니다." if temp >= 33 else ("저온으로 인한 세포 위축 우려가 있습니다." if temp <= 0 else "생육 및 신선도 보존에 최적화된 기온입니다.")
             st.info(f"🌡️ **(1) 기상 요인**: {city} 현재 기온 {temp}℃. {weather_desc}")
-            
-            # (2) 시기 요인
             st.info(f"📅 **(2) 시기 요인**: {data.get('d_expl')}")
-            
-            # (3) 생산 방식
             house_desc = "시설 재배를 통해 기후 변수를 차단하고 규격화된 고품질을 확보했습니다." if "하우스" in house else "자연 광량과 토양의 기운을 담은 노지 생산본연의 풍미를 강조할 수 있습니다."
             st.info(f"🏠 **(3) 생산 방식**: {house} 방식. {house_desc}")
-            
-            # (4) 산지 요인
             st.info(f"🌟 **(4) 산지 요인**: {data.get('l_expl')}")
 
         st.write("")
 
         with st.expander("✨ 내부 작물 품질 분석", expanded=True):
-            # (5) 품질 지표
             st.info(f"💎 **(5) 품질 지표**: {data.get('q_expl')}")
-            
-            # (6) 크기 등급
             size_desc = {"소": "1인 가구 및 간편 조리용 선호도가 높습니다.", "중": "가정용 및 대중적 소비가 가장 활발한 골든 사이즈입니다.", "대": "명절 선물 및 제수용으로 적합한 프리미엄 크기입니다.", "특대": "최상위 전문점 및 대형 선물 세트용 고부가가치 규격입니다."}.get(size)
             st.info(f"📏 **(6) 크기 등급**: {size} 등급. {size_desc}")
-            
-            # (7) 외관 등급
             app_desc = {"정품(최상)": "표면에 흠집이 전혀 없어 최상위 백화점 납품이 가능한 수준입니다.", "정품(보통)": "육안상 결점이 적어 대형 마트 및 일반 시장 판매에 적합합니다.", "못난이(흠과)": "외관은 투박하나 맛은 동일하여 가성비 및 가공용 수요가 높습니다."}.get(appearance)
             st.info(f"🎨 **(7) 외관 등급**: {appearance}. {app_desc}")
-            
-            # (8) 신선도 유지
             fresh_desc = "수확 직후의 최상급 세포 탄력을 유지 중입니다." if days_passed <= 1 else (f"수확 후 {days_passed}일 경과로 미생물 대사가 진행 중이니 빠른 판매가 권장됩니다." if days_passed > 5 else "유통 최적기의 신선도를 유지하고 있습니다.")
             st.info(f"🍃 **(8) 신선도 유지**: {days_passed}일 경과. {fresh_desc}")
 
