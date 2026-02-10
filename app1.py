@@ -153,7 +153,7 @@ if analyze_btn:
            - size_expl: {size} 크기 등급의 시장 선호도 및 용도 제안
            - appearance_expl: {appearance} 등급에 따른 소비자 소구 포인트
            - freshness_expl: 수확 후 {days_passed}일 경과에 따른 신선도 상태 및 관리 조언
-        5. long_advice: 10개 이상의 상세 판매 전략 (반드시 마크다운 굵게 처리와 이모티콘 사용, 전략마다 줄바꿈 필수)
+        5. long_advice: 10개 이상의 상세 판매 전략 (반드시 마크다운 굵게 처리와 첫문장 이후 이모티콘 하 사용, 전략마다 번호매김 필수, 전략마다 줄바꿈 두번 필수)
         """
         
         # GPT API 호출 (JSON 모드 사용)
@@ -232,6 +232,7 @@ if analyze_btn:
         
         # 하단 푸터: 리포트의 신뢰성을 높여주는 인증 마크
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
 
 
