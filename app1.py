@@ -7,61 +7,56 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# 1. 환경 변수 로드 (API 키 및 인증 정보 관리)
+# 1. 환경 변수 로드: .env 파일 등에서 설정된 API 키와 인증 정보를 가져와 관리합니다.
 load_dotenv()
-KMA_API_KEY = os.getenv("KMA_API_KEY")      # 기상청 API 키
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")    # OpenAI API 키
-KAMIS_KEY = os.getenv("KAMIS_CERT_KEY")     # KAMIS API 키
+KMA_API_KEY = os.getenv("KMA_API_KEY")      # 기상청 허브 API 인증키
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")    # OpenAI API 호출을 위한 키
+KAMIS_KEY = os.getenv("KAMIS_CERT_KEY")     # KAMIS(농수축산물 가격정보) 인증키
 KAMIS_ID = os.getenv("KAMIS_ID") or os.getenv("KAMIS_CERT_ID") # KAMIS 사용자 ID
 
-# OpenAI 클라이언트 초기화
+# OpenAI 클라이언트 초기화: GPT-4o 모델과 통신하기 위한 객체 생성
 client = OpenAI(api_key=OPENAI_KEY)
 
-# --- [안정적인 지역 매핑: 기상청 지점 코드 확충] ---
-# 지점 코드는 기상청 API(ASOS)에서 사용하는 고유 번호입니다.
+# --- [지역 매핑 데이터] ---
+# 기상청 ASOS(지상기상관측) 지점 코드를 지역명과 매핑해둔 딕셔너리입니다.
 CITY_CODE_MAP = {
-    # 경상권
     "거제": "294", "거창": "253", "진주": "192", "부산": "159", "대구": "143", 
     "안동": "136", "통영": "162", "포항": "138", "울산": "152", "창원": "155", "밀양": "288",
-    # 수도권
     "서울": "108", "인천": "112", "수원": "119", "파주": "99", "이천": "203", "양평": "202",
-    # 충청권
     "대전": "133", "청주": "131", "충주": "127", "천안": "232", "보령": "235", "홍성": "177",
-    # 전라권
     "광주": "156", "전주": "146", "목포": "165", "여수": "168", "군산": "140", "순천": "174",
-    # 강원권
     "춘천": "101", "강릉": "105", "원주": "114", "속초": "90", "동해": "106", "철원": "95",
-    # 제주 및 기타
     "제주": "184", "서귀포": "189", "울릉도": "115", "독도": "115"
 }
 
 def get_kma_weather(city_name):
     """
-    기상청 API를 통해 특정 지역의 실시간 기온 데이터를 가져오는 함수
+    기상청 API를 호출하여 입력받은 지역의 실시간 기온 데이터를 추출합니다.
+    최근 3시간 내의 데이터를 순차적으로 조회하여 유효한 값을 찾습니다.
     """
     stn_id = CITY_CODE_MAP.get(city_name)
-    if not stn_id: return None # 매핑 실패 시 None 반환
+    if not stn_id: return None
     
-    # 최근 3시간 데이터를 시도하여 데이터 누락 방지
     for h in range(1, 4):
         tm_str = (datetime.now() - timedelta(hours=h)).strftime("%Y%m%d%H00")
+        # 기상청 지상기상관측(SFCTM) API URL 구성
         url = f"https://apihub.kma.go.kr/api/typ01/url/kma_sfctm2.php?tm={tm_str}&stn={stn_id}&help=0&authKey={KMA_API_KEY}"
         try:
             with urllib.request.urlopen(url) as f:
-                res_text = f.read().decode('euc-kr')
-                # 주석(#)으로 시작하지 않는 실제 데이터 줄 추출
+                res_text = f.read().decode('euc-kr') # 기상청 데이터는 주로 EUC-KR 인코딩 사용
+                # '#' 주석 줄을 제외하고 공백으로 구분된 데이터 라인만 추출
                 lines = [l for l in res_text.split('\n') if l and not l.startswith('#')]
                 if lines: 
-                    # 기상청 데이터 포맷에서 11번째 인덱스가 기온(TA)
+                    # 기상청 데이터 규격상 11번째 인덱스가 지면 기온(TA) 임
                     return float(lines[0].split()[11])
         except: continue
-    return None # 조회 실패 시 None 반환
+    return None
 
 def get_market_price(item_name, category_name):
     """
-    KAMIS API를 통해 실시간 소매 시장 평균가를 조회하는 함수
+    KAMIS API를 통해 해당 품목 부류 내에서 사용자가 입력한 품목의 평균 소매가를 조회합니다.
     """
-    # KAMIS 부류 코드 매핑: 100(식량), 200(채소), 400(과일), 500(축산), 600(수산)
+    # KAMIS 코드 매핑: 식량(100), 채소(200), 과일(400), 축산(500), 수산(600)
     category_map = {
         "식량작물": "100", "채소류": "200", "과일류": "400", 
         "특용작물": "400", "축산물": "500", "수산물": "600"
@@ -79,23 +74,20 @@ def get_market_price(item_name, category_name):
     try:
         res = requests.get(url, params=params).json()
         items = res.get('price', [])
+        if not items or not isinstance(items, list): return None
         
-        if not items or not isinstance(items, list):
-            return None
-            
         for item in items:
-            # API 결과의 품목명에 사용자가 입력한 검색어가 포함되어 있는지 확인
+            # 반환된 리스트 중 사용자가 입력한 품목명이 포함된 첫 번째 결과의 당일 가격(dpr1) 반환
             if item_name in item.get('item_name', ''):
                 price = item.get('dpr1', '').replace(',', '')
                 return int(price) if price.isdigit() else None
         return None
-    except: 
-        return None
+    except: return None
 
-# --- [Streamlit 웹 인터페이스 설정] ---
+# --- [Streamlit UI 설정] ---
 st.set_page_config(page_title="장날 AI 전문가 리포트", layout="wide")
 
-# 사이드바: 사용자 입력 섹션
+# 사이드바 구성: 사용자로부터 분석에 필요한 변수들을 입력받음
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2674/2674505.png", width=80)
     st.header("📋 산지 및 품목 정보")
@@ -106,7 +98,7 @@ with st.sidebar:
     
     st.divider()
     st.header("🍏 전문가 품질 데이터")
-    # 카테고리별 동적 입력 필드 (당도, 조직감, 선도 등)
+    # 카테고리 선택에 따라 품질 측정 지표(Label)와 입력 방식(Slider/Select)을 동적으로 변경
     if category == "과일류":
         q_metric = st.slider("당도 (Brix)", 10.0, 20.0, 13.0, 0.5); q_label = "당도(Brix)"
     elif category in ["채소류", "식량작물"]:
@@ -121,46 +113,50 @@ with st.sidebar:
     size = st.select_slider("크기 등급", options=["소", "중", "대", "특대"], value="중")
     appearance = st.radio("외관 등급", ["정품(최상)", "정품(보통)", "못난이(흠과)"])
     record_date = st.date_input("수확/어획/도축 날짜", datetime.now())
-    
     analyze_btn = st.button("장날 정밀 분석 시작")
 
-# 메인 타이틀
+# 메인 화면 타이틀
 st.title(f"🍎 [장날] 지능형 전 품목 가격 결정 에이전트")
 
 if analyze_btn:
     with st.spinner(f"데이터 정밀 분석 중..."):
-        # --- [데이터 수집 및 예외 안내 로직 추가] ---
-        # 기상 데이터 수집 시도
+        # 1. 기상 데이터 연동
         temp_val = get_kma_weather(city)
+        temp = temp_val if temp_val is not None else 15.0 # 데이터 부재 시 기본값 15도
         if temp_val is None:
             st.warning(f"⚠️ {city} 지역의 실시간 기상 데이터를 불러올 수 없어 기본 기온(15.0℃)으로 분석을 진행합니다.")
-            temp = 15.0
-        else:
-            temp = temp_val
 
-        # 시장가 데이터 수집 시도
+        # 2. 시장가 데이터 연동
         market_val = get_market_price(crop, category)
+        market_p = market_val if market_val is not None else 5500 # 데이터 부재 시 기본값 5,500원
         if market_val is None:
             st.warning(f"⚠️ '{crop}' 품목의 실시간 소매가 정보를 찾을 수 없어 기본 시장가(5,500원)를 기준으로 추천가를 산출합니다.")
-            market_p = 5500
-        else:
-            market_p = market_val
 
+        # 3. 선도 판단을 위한 경과일 계산
         days_passed = (datetime.now().date() - record_date).days
         
-        # GPT-4o 분석 프롬프트: 유통 전문가 시점의 분석 및 판매 전략 요청
+        # 4. GPT-4o 분석 프롬프트: 8대 요인(기상, 시기, 방식, 산지, 품질, 크기, 외관, 신선도) 전체 분석 요청
         analysis_prompt = f"""
         날짜: {datetime.now().strftime('%Y-%m-%d')}. 품목: {crop}({category}), 산지: {city}, 방식: {house}, 
-        {q_label}: {q_metric}, 크기: {size}, 외관: {appearance}, 경과일: {days_passed}일.
-        위 데이터를 기반으로 다음 JSON을 작성:
+        {q_label}: {q_metric}, 크기: {size}, 외관: {appearance}, 경과일: {days_passed}일, 기온: {temp}℃.
+        
+        위 데이터를 기반으로 다음 JSON을 작성하세요:
         1. summary: 전문가적인 한 줄 요약 결론
-        2. d_idx/d_expl: 시기 요인 지수(1.0~1.1)와 설명 (명절 수요가 있다면 언급)
-        3. l_idx/l_expl: 산지 브랜드 가치 지수(0.85~1.05)와 근거
-        4. q_expl: {q_label}의 수치에 따른 구체적인 맛과 상품성 특징 설명
-        5. long_advice: 10개 이상의 상세 판매 전략 (못난이 전략 포함, 반드시 마크다운 굵게 처리와 이모티콘 사용), 한개의 전략마다 반드시 엔터를 쳐 줄바꿈할것
+        2. d_idx: 시기 요인 지수(1.0~1.1)
+        3. l_idx: 산지 브랜드 가치 지수(0.85~1.05)
+        4. factors: 다음 8가지 요인에 대한 각각의 구체적인 분석 내용을 포함한 객체
+           - weather_expl: 현재 기온({temp}℃)이 {crop}의 유통 및 수급에 미치는 영향
+           - timing_expl: 현재 시기적 특성(계절, 명절 등)과 수요 변화 분석
+           - method_expl: {house} 재배 방식에 따른 상품 가치 설명
+           - origin_expl: {city} 산지의 브랜드 가치와 인지도 분석
+           - quality_expl: {q_label}({q_metric})에 따른 구체적인 맛과 품질 특징
+           - size_expl: {size} 크기 등급의 시장 선호도 및 용도 제안
+           - appearance_expl: {appearance} 등급에 따른 소비자 소구 포인트
+           - freshness_expl: 수확 후 {days_passed}일 경과에 따른 신선도 상태 및 관리 조언
+        5. long_advice: 10개 이상의 상세 판매 전략 (반드시 마크다운 굵게 처리와 이모티콘 사용, 전략마다 줄바꿈 필수)
         """
         
-        # GPT API 호출
+        # GPT API 호출 (JSON 모드 사용)
         res = client.chat.completions.create(
             model="gpt-4o", 
             messages=[{"role": "user", "content": analysis_prompt}], 
@@ -168,28 +164,28 @@ if analyze_btn:
         )
         data = json.loads(res.choices[0].message.content)
 
-        # --- [장날 지수 산출 로직] ---
-        # 1. 기상 보정 (폭염이나 혹한 시 유통비 상승 반영)
+        # --- [장날 지수(Jangnal-Index) 산출 로직] ---
+        # (1) 기상 보정: 극심한 폭염이나 한파 시 유통/관리비 반영
         w_val = 1.05 if temp >= 33 or temp <= 0 else 1.0
-        # 2. 재배 방식 보정
+        # (2) 재배 방식 보정: 시설(하우스) 재배의 초기 투자비 및 품질 안정성 반영
         h_val = 1.05 if "하우스" in house else 1.0
-        # 3. 크기 보정
+        # (3) 크기 등급별 가중치
         s_val = {"소": 0.95, "중": 1.0, "대": 1.05, "특대": 1.1}.get(size, 1.0)
-        # 4. 외관 보정
+        # (4) 외관 상태별 가중치
         a_val = {"정품(최상)": 1.1, "정품(보통)": 1.0, "못난이(흠과)": 0.9}.get(appearance, 1.0)
-        # 5. 신선도(경과일) 보정
+        # (5) 신선도(경과일) 보정: 갓 수확한 상품에는 프리미엄, 5일 경과 시 감가
         f_val = 1.02 if days_passed <= 1 else (0.95 if days_passed > 5 else 1.0)
-        
-        # 6. 품질 지수 산출 (과일은 당도 비례, 나머지는 등급 매핑)
+        # (6) 품질 등급 가중치 매핑
         q_val_map = {"하": 0.9, "부족": 0.95, "보통": 1.0, "우수": 1.05, "최상": 1.1, "최상(특급)": 1.1, "활어급": 1.15, "1++": 1.2}
         q_val = q_val_map.get(str(q_metric), 1.0)
+        # 과일의 경우 당도 수치를 직접 연산에 반영 (기본 13브릭스 기준)
         if category == "과일류": q_val = 1.0 + (float(q_metric) - 13.0) * 0.015
         
-        # [최종 장날 지수 산출] 모든 가중치를 곱하여 산출 (최대 1.4 제한)
+        # [최종 통합 지수 산출] 모든 보정치를 곱하며, 무분별한 가격 상승 방지를 위해 최대 1.4배 제한
         j_idx = round(min(w_val * h_val * float(data.get("d_idx", 1.0)) * float(data.get("l_idx", 1.0)) * q_val * s_val * a_val * f_val, 1.4), 2)
-        rec_price = int(market_p * j_idx)
+        rec_price = int(market_p * j_idx) # 시장 평균가에 지수 적용
 
-        # 결과 화면 출력: 지표 카드
+        # 결과 화면 출력: 주요 지표를 3개의 컬럼으로 구성
         st.write(""); st.write(""); st.write("")
         col_p1, col_p2, col_p3 = st.columns(3)
         col_p1.metric("시장 소매 평균가", f"{market_p:,}원")
@@ -199,14 +195,10 @@ if analyze_btn:
         st.write(""); 
         st.success(f"📌 **전문가 총평**: {data.get('summary')}")
         
-        st.write(""); st.write(""); st.write("")
-
-        # 장날 지수 가독성 그래프 (Progress Bar 및 라벨링)
+        # 통합 지수 시각화: 프로그레스 바를 통해 현재 가격 위치 표시
         st.markdown(f"### 📊 장날 통합 지수 분석 : {j_idx}")
-        norm_idx = min(max((j_idx - 0.5) / 1.0, 0.0), 1.0)
+        norm_idx = min(max((j_idx - 0.5) / 1.0, 0.0), 1.0) # 0.5~1.5 범위를 0~100%로 정규화
         st.progress(norm_idx)
-        
-        # 지수별 시장 구간 설명 (HTML 사용)
         st.markdown("""
         <div style="display: flex; width: 100%; margin-top: -5px;">
             <div style="width: 20%;"></div> <div style="width: 20%; text-align: center; font-weight: bold;">0.8</div>
@@ -214,39 +206,32 @@ if analyze_btn:
             <div style="width: 20%; text-align: center; font-weight: bold;">1.2</div>
             <div style="width: 20%; text-align: center; font-weight: bold;">1.4</div>
         </div>
-        <div style="display: flex; width: 100%; margin-top: 5px;">
-            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;"></div>
-            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">⚠️ 재고소진</div>
-            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">🏠 수급안정</div>
-            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">📈 수요상승</div>
-            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">🔥 최고가형성</div>
-        </div>
         """, unsafe_allow_html=True)
         
         st.write(""); st.write(""); st.write("")
 
-        # 8대 유통 및 품질 상세 분석 리포트 (Expander 사용으로 깔끔하게 구성)
+        # 8대 유통 및 품질 상세 분석 리포트: GPT가 분석한 내용을 상세히 출력
         st.markdown(f"### 🔍 8대 유통 및 품질 상세 분석 리포트")
         with st.expander("🌐 외부 유통 환경 분석", expanded=True):
-            weather_desc = "고온 상태" if temp >= 33 else ("저온 상태" if temp <= 0 else "생육 최적 온도")
-            st.info(f"🌡️ **(1) 기상 요인**: {city} 현재 기온 {temp}℃. {weather_desc}")
-            st.info(f"📅 **(2) 시기 요인**: {data.get('d_expl')}")
-            st.info(f"🏠 **(3) 생산 방식**: {house} 방식 적용")
-            st.info(f"🌟 **(4) 산지 요인**: {data.get('l_expl')}")
+            st.info(f"🌡️ **(1) 기상 요인**: {data['factors'].get('weather_expl')}")
+            st.info(f"📅 **(2) 시기 요인**: {data['factors'].get('timing_expl')}")
+            st.info(f"🏠 **(3) 생산 방식**: {data['factors'].get('method_expl')}")
+            st.info(f"🌟 **(4) 산지 요인**: {data['factors'].get('origin_expl')}")
 
         with st.expander("✨ 내부 작물 품질 분석", expanded=True):
-            st.info(f"💎 **(5) 품질 지표**: {data.get('q_expl')}")
-            st.info(f"📏 **(6) 크기 등급**: {size} 등급 맞춤 전략 필요")
-            st.info(f"🎨 **(7) 외관 등급**: {appearance} 상태 반영")
-            st.info(f"🍃 **(8) 신선도 유지**: 수확 후 {days_passed}일 경과 분석")
+            st.info(f"💎 **(5) 품질 지표**: {data['factors'].get('quality_expl')}")
+            st.info(f"📏 **(6) 크기 등급**: {data['factors'].get('size_expl')}")
+            st.info(f"🎨 **(7) 외관 등급**: {data['factors'].get('appearance_expl')}")
+            st.info(f"🍃 **(8) 신선도 유지**: {data['factors'].get('freshness_expl')}")
 
         st.write(""); st.write(""); st.write("")
 
-        # 최종 AI 전문가 판매 가이드 출력
+        # 판매 가이드 섹션: 마케팅 포인트 및 판매 전략 출력
         st.markdown("### 💡 AI 유통 전문가의 10대 판매 전략")
         st.success(data.get("long_advice"))
         
-        # 하단 인증 정보 (신뢰도 부여)
+        # 하단 푸터: 리포트의 신뢰성을 높여주는 인증 마크
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
 
