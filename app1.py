@@ -206,6 +206,13 @@ if analyze_btn:
             <div style="width: 20%; text-align: center; font-weight: bold;">1.2</div>
             <div style="width: 20%; text-align: center; font-weight: bold;">1.4</div>
         </div>
+        <div style="display: flex; width: 100%; margin-top: 5px;">
+            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;"></div>
+            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">⚠️ 재고소진</div>
+            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">🏠 수급안정</div>
+            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">📈 수요상승</div>
+            <div style="width: 20%; text-align: center; font-size: 0.8rem; color: #666;">🔥 최고가형성</div>
+        </div>
         """, unsafe_allow_html=True)
         
         st.write(""); st.write(""); st.write("")
@@ -232,6 +239,7 @@ if analyze_btn:
         
         # 하단 푸터: 리포트의 신뢰성을 높여주는 인증 마크
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
 
 
