@@ -146,9 +146,9 @@ if analyze_btn:
         3. l_idx: 산지 브랜드 가치 지수(0.85~1.05)
         4. factors: 다음 8가지 요인에 대한 각각의 구체적인 분석 내용을 포함한 객체, "~니다"와 같은 존댓말 사용
            - weather_expl: 현재 기온({temp}℃)이 {crop}의 유통 및 수급에 미치는 영향
-           - timing_expl: 현재 시기적 특성(계절적인 수요 언급, 설 추석 등의 명절 기간이 다가온다면 언급)과 수요 변화 분석
+           - timing_expl: 현재 시기적 특성(계절적인 수요 언급 and 날짜에 따라 설 추석 등의 명절 기간이 다가온다면 언급, 아니라면 언급 금지)과 수요 변화 분석
            - method_expl: {house} 재배 방식에 따른 상품 가치 설명
-           - origin_expl: {city} 산지의 브랜드 가치와 인지도 분석(만약 특산물이라면 그것에 관한 언급)
+           - origin_expl: {city} 산지의 브랜드 가치와 인지도 분석(만약 생산품이 그 지역의 특산물이라면 그것에 관한 언급, 지어내기 금지)
            - quality_expl: {q_label}({q_metric})에 따른 구체적인 맛과 품질 특징
            - size_expl: {size} 크기 등급의 시장 선호도 및 용도 제안
            - appearance_expl: {appearance} 등급에 따른 소비자 소구 포인트
@@ -239,6 +239,7 @@ if analyze_btn:
         
         # 하단 푸터: 리포트의 신뢰성을 높여주는 인증 마크
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
 
 
