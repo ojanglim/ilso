@@ -144,7 +144,7 @@ if analyze_btn:
         1. summary: 전문가적인 한 줄 요약 결론
         2. d_idx: 시기 요인 지수(1.0~1.1)
         3. l_idx: 산지 브랜드 가치 지수(0.85~1.05)
-        4. factors: 다음 8가지 요인에 대한 각각의 구체적인 분석 내용을 포함한 객체
+        4. factors: 다음 8가지 요인에 대한 각각의 구체적인 분석 내용을 포함한 객체, "~니다"와 같은 존댓말 사용
            - weather_expl: 현재 기온({temp}℃)이 {crop}의 유통 및 수급에 미치는 영향
            - timing_expl: 현재 시기적 특성(계절, 명절 등)과 수요 변화 분석
            - method_expl: {house} 재배 방식에 따른 상품 가치 설명
@@ -239,6 +239,7 @@ if analyze_btn:
         
         # 하단 푸터: 리포트의 신뢰성을 높여주는 인증 마크
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
 
 
