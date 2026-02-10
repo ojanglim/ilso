@@ -154,7 +154,7 @@ if analyze_btn:
         {q_label}: {q_metric}, 크기: {size}, 외관: {appearance}, 경과일: {days_passed}일.
         위 데이터를 기반으로 다음 JSON을 작성:
         1. summary: 전문가적인 한 줄 요약 결론
-        2. d_idx/d_expl: 시기 요인 지수(1.0~1.1)와 설명 (명절 수요 및 시즈널 이슈 언급)
+        2. d_idx/d_expl: 시기 요인 지수(1.0~1.1)와 설명 (명절 수요가 있다면 언급)
         3. l_idx/l_expl: 산지 브랜드 가치 지수(0.85~1.05)와 근거
         4. q_expl: {q_label}의 수치에 따른 구체적인 맛과 상품성 특징 설명
         5. long_advice: 10개 이상의 상세 판매 전략 (못난이 전략 포함, 반드시 마크다운 굵게 처리와 이모티콘 사용), 한개의 전략마다 반드시 엔터를 쳐 줄바꿈할것
@@ -194,7 +194,7 @@ if analyze_btn:
         col_p1, col_p2, col_p3 = st.columns(3)
         col_p1.metric("시장 소매 평균가", f"{market_p:,}원")
         col_p2.metric("장날 추천 판매가", f"{rec_price:,}원", f"지수 {j_idx}")
-        col_p3.metric("예상 순수익", f"{int(rec_price * 0.55):,}원", "중간 마진 절감분")
+        col_p3.metric("예상 순수익", f"{int(rec_price * 0.55):,}원", "중간 마진 55% 절감분")
         
         st.write(""); 
         st.success(f"📌 **전문가 총평**: {data.get('summary')}")
@@ -248,4 +248,5 @@ if analyze_btn:
         
         # 하단 인증 정보 (신뢰도 부여)
         st.caption(f"인증번호: JNG-{datetime.now().strftime('%Y%m%d%H%M')} | 실시간 데이터 기반 공인 리포트")
+
 
